@@ -25,15 +25,75 @@ AGPLv3), deployed as a **split**:
   needs no public inbound traffic.
 
 Repo layout:
+- [`local-dev/`](local-dev/README.md) — run the whole thing on your Mac (dev + preview)
 - [`backend/`](backend/README.md) — Docker Compose stack + Caddy + env + backups (runs on the VPS)
-- [`frontend/`](frontend/README.md) — build + rebrand + deploy scripts (runs on a build machine/CI)
+- [`frontend/`](frontend/README.md) — build + rebrand + deploy scripts (runs on your Mac / CI)
+- [`CUSTOMIZING.md`](CUSTOMIZING.md) — how to change the product (dev → test → ship)
+- [`ROADMAP.md`](ROADMAP.md) — phased plan from local preview to production
 
-## Order of operations
+---
+
+# Local development (on your Mac)
+
+Prereqs: **Docker Desktop** running; for source/rebrand work also **Node 24.15.x**
++ `corepack enable` and ~8 GB free RAM. Full detail + 3 loops in
+[`local-dev/README.md`](local-dev/README.md).
+
+**Fastest — see the app running:**
+```sh
+cd local-dev
+cp .env.example .env          # throwaway local secrets
+docker compose up -d          # pulls + starts server + worker + postgres + redis
+open http://localhost:3000    # create the first workspace + user
+```
+Native **Dashboards** live under *Settings → Updates → Early Access* — try those
+before writing any code (they may cover your needs with zero changes).
+
+**Iterate on branding / UI (hot reload):**
+```sh
+# with the stack above running on :3000
+git clone --branch v2.8.3 --depth 1 https://github.com/twentyhq/twenty.git
+cd twenty && corepack enable && yarn
+echo 'REACT_APP_SERVER_BASE_URL=http://localhost:3000' > packages/twenty-front/.env
+npx nx start twenty-front     # UI with hot reload on :3001
+```
+
+**Stop / reset:**
+```sh
+cd local-dev
+docker compose down           # stop (keeps data)
+docker compose down -v        # stop + wipe the local database
+```
+
+For changing product code the right way (tiers, conventions, tests), see
+[`CUSTOMIZING.md`](CUSTOMIZING.md).
+
+---
+
+# Deploy to production
+
+Order of operations (each step links to its detailed runbook):
 
 1. **Domain & DNS** (below) — register domain, DNS on Cloudflare, API token.
-2. **Backend** — deploy on the VPS, confirm `https://api.ourco.com/healthz`.
-3. **Frontend** — build at the same `TAG`, deploy, set `app.ourco.com` custom domain.
+2. **Backend** ([`backend/README.md`](backend/README.md)) — on the VPS:
+   ```sh
+   cd /opt/twenty/backend
+   cp .env.example .env        # set TAG, domains, secrets, Cloudflare token
+   docker compose up -d
+   curl -I https://api.ourco.com/healthz   # expect 200, valid TLS
+   ```
+3. **Frontend** ([`frontend/README.md`](frontend/README.md)) — from your Mac, same `TAG`:
+   ```sh
+   cd frontend
+   TAG=v2.8.3 REACT_APP_SERVER_BASE_URL=https://api.ourco.com APP_NAME="Quandatics CRM" \
+     HOST=azure SWA_DEPLOYMENT_TOKEN=xxxxx ./build-and-deploy.sh
+   ```
+   Then set the `app.ourco.com` custom domain on the host and create its CNAME.
 4. **Verify** end-to-end (checklist below).
+
+Deploying the backend *from your Mac* (remote Docker context or rsync+ssh) and
+shipping custom code are covered in [`local-dev/README.md`](local-dev/README.md)
+and [`CUSTOMIZING.md`](CUSTOMIZING.md).
 
 ## Domain & DNS (Cloudflare)
 
