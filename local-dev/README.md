@@ -21,7 +21,7 @@ run the frontend dev server against it.
 
 ```sh
 # backend from Loop 1 is up on :3000
-git clone --branch v0.62.0 --depth 1 https://github.com/twentyhq/twenty.git
+git clone --branch v2.8.3 --depth 1 https://github.com/twentyhq/twenty.git
 cd twenty && corepack enable && yarn
 # point the dev front at the local backend:
 echo 'REACT_APP_SERVER_BASE_URL=http://localhost:3000' > packages/twenty-front/.env
@@ -39,7 +39,7 @@ Mirror production (static build → separate backend) before shipping.
 # 1) backend up on :3000 (Loop 1)
 # 2) build the static front pointed at the local backend, no deploy:
 cd ../frontend
-TAG=v0.62.0 REACT_APP_SERVER_BASE_URL=http://localhost:3000 HOST=none ./build-and-deploy.sh
+TAG=v2.8.3 REACT_APP_SERVER_BASE_URL=http://localhost:3000 HOST=none ./build-and-deploy.sh
 # 3) serve the static output like a CDN would:
 npx -y serve .work/twenty/packages/twenty-front/build -l 4000
 open http://localhost:4000          # static front (:4000) talking to backend (:3000)
@@ -55,10 +55,10 @@ Your laptop is the build/deploy box — no CI required.
 ```sh
 cd frontend
 # Azure
-TAG=v0.62.0 REACT_APP_SERVER_BASE_URL=https://api.ourco.com APP_NAME="Quandatics CRM" \
+TAG=v2.8.3 REACT_APP_SERVER_BASE_URL=https://api.ourco.com APP_NAME="Quandatics CRM" \
   HOST=azure SWA_DEPLOYMENT_TOKEN=xxxxx ./build-and-deploy.sh
 # Vercel
-TAG=v0.62.0 REACT_APP_SERVER_BASE_URL=https://api.ourco.com \
+TAG=v2.8.3 REACT_APP_SERVER_BASE_URL=https://api.ourco.com \
   HOST=vercel VERCEL_TOKEN=xxxxx ./build-and-deploy.sh
 ```
 

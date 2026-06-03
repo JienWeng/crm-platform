@@ -17,20 +17,20 @@ Put assets in `brand-assets/` mirroring twenty-front's tree (see
 
 ```sh
 # Azure Static Web Apps
-TAG=v0.62.0 \
+TAG=v2.8.3 \
 REACT_APP_SERVER_BASE_URL=https://api.ourco.com \
 APP_NAME="Quandatics CRM" \
 HOST=azure SWA_DEPLOYMENT_TOKEN=xxxxx \
 ./build-and-deploy.sh
 
 # Vercel
-TAG=v0.62.0 \
+TAG=v2.8.3 \
 REACT_APP_SERVER_BASE_URL=https://api.ourco.com \
 HOST=vercel VERCEL_TOKEN=xxxxx \
 ./build-and-deploy.sh
 
 # Just build (upload the printed build/ dir yourself)
-TAG=v0.62.0 REACT_APP_SERVER_BASE_URL=https://api.ourco.com HOST=none ./build-and-deploy.sh
+TAG=v2.8.3 REACT_APP_SERVER_BASE_URL=https://api.ourco.com HOST=none ./build-and-deploy.sh
 ```
 
 After deploy, set the custom domain `app.ourco.com` in the host dashboard and

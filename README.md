@@ -55,7 +55,7 @@ Repo layout:
 
 | Where | Variable | Value |
 |-------|----------|-------|
-| `backend/.env` | `TAG` | pinned release, e.g. `v0.62.0` |
+| `backend/.env` | `TAG` | pinned release, e.g. `v2.8.3` |
 | `backend/.env` | `SERVER_URL` | `https://api.ourco.com` |
 | `backend/.env` | `FRONTEND_URL` | `https://app.ourco.com` |
 | `backend/.env` | `API_DOMAIN` | `api.ourco.com` |
