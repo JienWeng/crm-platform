@@ -1,0 +1,7 @@
+# Secrets — never commit
+backend/.env
+local-dev/.env
+local-dev/twenty/
+frontend/.work/
+backend/backups/
+*.bak

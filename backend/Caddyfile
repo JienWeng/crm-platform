@@ -1,0 +1,18 @@
+# TLS-terminating reverse proxy for the Twenty backend.
+# Issues a real Let's Encrypt cert for $API_DOMAIN via the Cloudflare DNS-01
+# challenge — no public inbound traffic required, so it works for a server that
+# is only reachable on the VPN / local network.
+#
+# Requires the caddy-cloudflare image (DNS module) and a Cloudflare API token
+# with Zone:DNS:Edit on the zone. Both are wired in docker-compose.yml via .env.
+
+{$API_DOMAIN} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	# Forward everything to the Twenty server over the internal compose network.
+	reverse_proxy server:3000
+
+	encode gzip zstd
+}

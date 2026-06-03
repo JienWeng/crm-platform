@@ -1,0 +1,157 @@
+name: twenty
+
+# Adapted from twentyhq/twenty packages/twenty-docker/docker-compose.yml
+# Changes for our split / VPN-only deployment:
+#   - server port is NOT published to the host; only Caddy is exposed (443/80).
+#     Caddy reaches the server over the internal compose network at server:3000.
+#   - Added FRONTEND_URL (official compose omits it) for auth/OAuth redirects.
+#   - Added a Caddy service that terminates TLS for api.<domain> using a
+#     Let's Encrypt DNS-01 challenge via Cloudflare (works with no public inbound).
+# Everything is driven by .env in this directory.
+
+services:
+  caddy:
+    # Caddy build with the Cloudflare DNS module baked in (needed for DNS-01).
+    image: ghcr.io/caddybuilds/caddy-cloudflare:latest
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}                 # e.g. api.ourco.com
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+
+  server:
+    image: ${SERVER_IMAGE:-twentycrm/twenty}:${TAG:-latest}
+    volumes:
+      - server-local-data:/app/packages/twenty-server/.local-storage
+    # NOTE: intentionally NOT publishing 3000 to the host. Caddy proxies to it
+    # over the internal network. If you must reach it directly for debugging,
+    # uncomment and bind to localhost only:
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    environment:
+      NODE_PORT: 3000
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/default
+      SERVER_URL: ${SERVER_URL}                 # https://api.ourco.com
+      FRONTEND_URL: ${FRONTEND_URL}             # https://app.ourco.com (auth/OAuth redirects)
+      TRUST_PROXY: ${TRUST_PROXY:-1}            # honor X-Forwarded-Proto from Caddy
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DISABLE_DB_MIGRATIONS: ${DISABLE_DB_MIGRATIONS}
+      DISABLE_CRON_JOBS_REGISTRATION: ${DISABLE_CRON_JOBS_REGISTRATION}
+
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION}
+      STORAGE_S3_NAME: ${STORAGE_S3_NAME}
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
+      APP_SECRET: ${APP_SECRET:-}
+
+      # ── Optional "configure to taste" vars (Layer A) ──────────────────────
+      # To enable one: uncomment here AND set its value in .env. (Docker only
+      # passes through vars listed in this block.) Full list + docs:
+      # https://docs.twenty.com/developers/self-host/capabilities/setup
+      #
+      # Let multiple workspaces exist + admin panel for DB-stored config:
+      # IS_MULTIWORKSPACE_ENABLED: ${IS_MULTIWORKSPACE_ENABLED}
+      # IS_CONFIG_VARIABLES_IN_DB_ENABLED: ${IS_CONFIG_VARIABLES_IN_DB_ENABLED}
+      #
+      # Outbound email (invites, notifications):
+      # EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+      # EMAIL_FROM_NAME: ${EMAIL_FROM_NAME}
+      # EMAIL_DRIVER: ${EMAIL_DRIVER}            # smtp
+      # EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
+      # EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT}
+      # EMAIL_SMTP_USER: ${EMAIL_SMTP_USER}
+      # EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD}
+      #
+      # Google login + Gmail/Calendar sync:
+      # AUTH_GOOGLE_ENABLED: ${AUTH_GOOGLE_ENABLED}
+      # AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID}
+      # AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET}
+      # AUTH_GOOGLE_CALLBACK_URL: ${AUTH_GOOGLE_CALLBACK_URL}
+      #
+      # Microsoft / Entra login + mail/calendar:
+      # AUTH_MICROSOFT_ENABLED: ${AUTH_MICROSOFT_ENABLED}
+      # AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID}
+      # AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET}
+      # AUTH_MICROSOFT_CALLBACK_URL: ${AUTH_MICROSOFT_CALLBACK_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: curl --fail http://localhost:3000/healthz
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: always
+
+  worker:
+    image: ${SERVER_IMAGE:-twentycrm/twenty}:${TAG:-latest}
+    volumes:
+      - server-local-data:/app/packages/twenty-server/.local-storage
+    command: ["yarn", "worker:prod"]
+    environment:
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/default
+      SERVER_URL: ${SERVER_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DISABLE_DB_MIGRATIONS: "true"  # already run by the server
+      DISABLE_CRON_JOBS_REGISTRATION: "true"  # already run by the server
+
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION}
+      STORAGE_S3_NAME: ${STORAGE_S3_NAME}
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
+      APP_SECRET: ${APP_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    restart: always
+
+  db:
+    image: postgres:16
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${PG_DATABASE_NAME:-default}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:-postgres}
+      POSTGRES_USER: ${PG_DATABASE_USER:-postgres}
+    healthcheck:
+      test: pg_isready -U ${PG_DATABASE_USER:-postgres} -h localhost -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  redis:
+    image: redis
+    restart: always
+    command: ["--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:
+  server-local-data:
+  caddy-data:
+  caddy-config:
