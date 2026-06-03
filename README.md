@@ -28,7 +28,9 @@ Repo layout:
 - [`local-dev/`](local-dev/README.md) — run the whole thing on your Mac (dev + preview)
 - [`backend/`](backend/README.md) — Docker Compose stack + Caddy + env + backups (runs on the VPS)
 - [`frontend/`](frontend/README.md) — build + rebrand + deploy scripts (runs on your Mac / CI)
+- [`CONFIGURE.md`](CONFIGURE.md) — Entra ID SSO, sign-up, roles/permissions, data migration
 - [`CUSTOMIZING.md`](CUSTOMIZING.md) — how to change the product (dev → test → ship)
+- [`tools/migrate.py`](tools/migrate.py) — bulk CSV → REST import script
 - [`ROADMAP.md`](ROADMAP.md) — phased plan from local preview to production
 
 ---
