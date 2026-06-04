@@ -1,34 +1,42 @@
-# Quandatics CRM — self-hosted Twenty (split deployment)
+# Quandatics CRM — self-hosted Twenty (multi-workspace, single VPS)
 
 Our own CRM built on [Twenty](https://github.com/twentyhq/twenty) (open source,
-AGPLv3), deployed as a **split**:
+AGPLv3). Frontend **and** backend are served by **one Caddy on the company VPS** —
+both halves terminate TLS on the same instance, no CDN:
 
 ```
    VPN/Local users
-        │
-        ▼  https (CDN)
-  app.ourco.com ──────────────►  Azure SWA / Vercel  (static, rebranded twenty-front)
-        │
-        │  browser API calls (https, Authorization: Bearer …)
+        │  https
         ▼
-  api.ourco.com ──────────────►  Caddy (TLS, DNS-01)  ─►  twenty-server :3000
-                                    on the company VPS         │
-                                    (VPN / local network)      ├─ worker
-                                                               ├─ postgres:16
-                                                               └─ redis
+   *.app.ourco.com  ─┐
+   api.ourco.com    ─┴────►  Caddy on the VPS (TLS via Cloudflare DNS-01, wildcard)
+                                 │   ├─ *.app.ourco.com → static twenty-front bundle (file server)
+                                 │   └─ api.ourco.com   → twenty-server :3000 (reverse_proxy)
+                                 │      (VPN / local network)
+                                 ├─ worker
+                                 ├─ postgres:16
+                                 └─ redis
 ```
 
-- **Frontend** is public on a CDN but useless without backend access.
-- **Backend** is reachable only on the VPN → **users must be on the VPN.**
-- Because the CDN frontend is HTTPS, the backend **must** be HTTPS too
-  (mixed-content rule) — handled by Caddy with a Cloudflare DNS-01 cert, which
-  needs no public inbound traffic.
+- **One Caddy, one wildcard cert.** Caddy serves the rebranded `twenty-front`
+  static files on every `*.app.ourco.com` host and reverse-proxies
+  `api.ourco.com` to `twenty-server:3000`. Both sites share a single Cloudflare
+  DNS-01 cert (the only ACME flow that issues wildcards) and need no public inbound.
+- **One static bundle serves every workspace.** `twenty-front` is built once with
+  `REACT_APP_SERVER_BASE_URL=https://api.ourco.com`. The browser's subdomain
+  (`acme.app.ourco.com`) selects the workspace; the bundle itself is
+  workspace-agnostic, so Caddy serves the same files on every `*.app.ourco.com`
+  host. No CDN / Azure SWA / Vercel — a CDN gives no benefit to VPN-only users.
+- **Backend** is reachable only on the VPN → **users must be on the VPN.** The
+  frontend lives on the same VPS, so it is gated the same way.
+- TLS is HTTPS end-to-end (no mixed-content surprises), handled by Caddy with a
+  Cloudflare DNS-01 cert, which needs no public inbound traffic.
 
 Repo layout:
 - [`local-dev/`](local-dev/README.md) — run the whole thing on your Mac (dev + preview)
-- [`backend/`](backend/README.md) — Docker Compose stack + Caddy + env + backups (runs on the VPS)
-- [`frontend/`](frontend/README.md) — build + rebrand + deploy scripts (runs on your Mac / CI)
-- [`CONFIGURE.md`](CONFIGURE.md) — Entra ID SSO, sign-up, roles/permissions, data migration
+- [`backend/`](backend/README.md) — Docker Compose stack + Caddy (API + frontend) + env + backups (runs on the VPS)
+- [`frontend/`](frontend/README.md) — build + rebrand scripts; output is the static bundle Caddy serves (runs on your Mac / CI)
+- [`CONFIGURE.md`](CONFIGURE.md) — Entra ID SSO, multi-workspace access, roles/permissions, data migration
 - [`CUSTOMIZING.md`](CUSTOMIZING.md) — how to change the product (dev → test → ship)
 - [`tools/migrate.py`](tools/migrate.py) — bulk CSV → REST import script
 - [`ROADMAP.md`](ROADMAP.md) — phased plan from local preview to production
@@ -88,9 +96,11 @@ Order of operations (each step links to its detailed runbook):
    ```sh
    cd frontend
    TAG=v2.8.3 REACT_APP_SERVER_BASE_URL=https://api.ourco.com APP_NAME="Quandatics CRM" \
-     HOST=azure SWA_DEPLOYMENT_TOKEN=xxxxx ./build-and-deploy.sh
+     ./build-and-deploy.sh
    ```
-   Then set the `app.ourco.com` custom domain on the host and create its CNAME.
+   This builds the rebranded static bundle and stages it to the dir Caddy serves
+   on `*.app.ourco.com` (bind mount / shared volume) — no CDN push. One bundle
+   covers every workspace subdomain.
 4. **Verify** end-to-end (checklist below).
 
 Deploying the backend *from your Mac* (remote Docker context or rsync+ssh) and
@@ -108,10 +118,12 @@ and [`CUSTOMIZING.md`](CUSTOMIZING.md).
    | Name | Type | Value | Proxy |
    |------|------|-------|-------|
    | `api` | A | VPS **internal/VPN IP** | DNS only (grey cloud) |
-   | `app` | CNAME | target from Azure SWA / Vercel | per host instructions |
+   | `*.app` | A (wildcard) | **same** VPS internal/VPN IP | DNS only (grey cloud) |
 
-   `api` resolves for everyone but is only reachable on the VPN — that's the gate.
-   Caddy still gets a valid public cert because DNS-01 only proves zone control.
+   `*.app` covers every workspace subdomain (`app.ourco.com` is the default,
+   `DEFAULT_SUBDOMAIN=app`). Both names resolve for everyone but are only reachable
+   on the VPN — that's the gate. Caddy still gets a valid public **wildcard** cert
+   because DNS-01 only proves zone control (no public inbound needed).
 
 ## Wire-up (the values that connect both halves)
 
@@ -130,11 +142,16 @@ and [`CUSTOMIZING.md`](CUSTOMIZING.md).
 1. `curl -I https://api.ourco.com/healthz` from a VPN client → `200`, valid TLS.
 2. Open `https://app.ourco.com` on the VPN → DevTools → Network: API calls hit
    `https://api.ourco.com`, no mixed-content / CORS errors.
-3. From **off** the VPN: `app.ourco.com` loads but API calls fail → gate confirmed.
-4. Create first workspace + user, log out, log back in → bearer-token auth works.
-5. Tab title / favicon / logo show the rebrand.
-6. Create a record + custom field → no GraphQL schema-version errors (front TAG == back TAG).
-7. `docker compose down && up -d`, reload → data persists.
+3. From **off** the VPN: neither `app.ourco.com` nor `api.ourco.com` is reachable
+   (both terminate on the VPN-only VPS) → gate confirmed.
+4. Sign in at `app.ourco.com` with **"Continue with Microsoft"** (no password field —
+   `AUTH_PASSWORD_ENABLED=false`), log out, log back in → Entra SSO + bearer-token auth works.
+5. As a server admin, create a **second workspace** → confirm it routes to its own
+   subdomain (e.g. `acme.app.ourco.com`) under the wildcard cert, and a domain-matched
+   Entra user auto-joins on first sign-in.
+6. Tab title / favicon / logo show the rebrand.
+7. Create a record + custom field → no GraphQL schema-version errors (front TAG == back TAG).
+8. `docker compose down && up -d`, reload → data persists.
 
 ## Upgrades
 

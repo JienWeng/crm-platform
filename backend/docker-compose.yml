@@ -19,9 +19,13 @@ services:
       - "443:443"
     environment:
       API_DOMAIN: ${API_DOMAIN}                 # e.g. api.ourco.com
+      FRONTEND_WILDCARD_DOMAIN: ${FRONTEND_WILDCARD_DOMAIN}   # e.g. *.app.ourco.com
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Static twenty-front bundle published here by frontend/build-and-deploy.sh
+      # (DEPLOY_DIR), served read-only on *.app.ourco.com. Keep the two paths in sync.
+      - /srv/quandatics-front:/srv/quandatics-front:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
@@ -56,14 +60,32 @@ services:
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
       APP_SECRET: ${APP_SECRET:-}
 
+      # ── Multi-workspace (native, subdomain-per-workspace) ─────────────────
+      # Multiple workspaces on one instance, routed by subdomain under
+      # *.app.ourco.com. Creation is locked to server admins (no open signup).
+      IS_MULTIWORKSPACE_ENABLED: ${IS_MULTIWORKSPACE_ENABLED}
+      IS_WORKSPACE_CREATION_LIMITED_TO_SERVER_ADMINS: ${IS_WORKSPACE_CREATION_LIMITED_TO_SERVER_ADMINS}
+      # Landing subdomain; the server builds per-workspace URLs as
+      # <subdomain>.<FRONTEND_URL host> (e.g. acme.app.ourco.com):
+      DEFAULT_SUBDOMAIN: ${DEFAULT_SUBDOMAIN:-app}
+      # Keep .env authoritative (do NOT read config from the DB admin panel):
+      IS_CONFIG_VARIABLES_IN_DB_ENABLED: ${IS_CONFIG_VARIABLES_IN_DB_ENABLED:-false}
+
+      # ── Microsoft Entra ID login (SSO-only) ───────────────────────────────
+      # See CONFIGURE.md for the Azure app-registration steps. Callback URLs
+      # point at the API/server domain (centralized — no per-workspace URIs).
+      AUTH_MICROSOFT_ENABLED: ${AUTH_MICROSOFT_ENABLED}
+      AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID}
+      AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET}
+      AUTH_MICROSOFT_CALLBACK_URL: ${AUTH_MICROSOFT_CALLBACK_URL}
+      AUTH_MICROSOFT_APIS_CALLBACK_URL: ${AUTH_MICROSOFT_APIS_CALLBACK_URL}
+      AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-false}   # false = SSO-only
+      # Google intentionally left disabled (AUTH_GOOGLE_ENABLED unset/false).
+
       # ── Optional "configure to taste" vars (Layer A) ──────────────────────
       # To enable one: uncomment here AND set its value in .env. (Docker only
       # passes through vars listed in this block.) Full list + docs:
       # https://docs.twenty.com/developers/self-host/capabilities/setup
-      #
-      # Let multiple workspaces exist + admin panel for DB-stored config:
-      # IS_MULTIWORKSPACE_ENABLED: ${IS_MULTIWORKSPACE_ENABLED}
-      # IS_CONFIG_VARIABLES_IN_DB_ENABLED: ${IS_CONFIG_VARIABLES_IN_DB_ENABLED}
       #
       # Outbound email (invites, notifications):
       # EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
@@ -80,17 +102,10 @@ services:
       # AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET}
       # AUTH_GOOGLE_CALLBACK_URL: ${AUTH_GOOGLE_CALLBACK_URL}
       #
-      # Microsoft / Entra ID login (see CONFIGURE.md for Azure steps):
-      # AUTH_MICROSOFT_ENABLED: ${AUTH_MICROSOFT_ENABLED}
-      # AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID}
-      # AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET}
-      # AUTH_MICROSOFT_CALLBACK_URL: ${AUTH_MICROSOFT_CALLBACK_URL}
-      # AUTH_MICROSOFT_APIS_CALLBACK_URL: ${AUTH_MICROSOFT_APIS_CALLBACK_URL}
-      # AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED}   # false = SSO-only
-      # Outlook mail/calendar sync also belongs on the worker (see below):
+      # Outlook mail/calendar sync (out of scope for now — can enable later;
+      # these belong on the worker too, see below):
       # MESSAGING_PROVIDER_MICROSOFT_ENABLED: ${MESSAGING_PROVIDER_MICROSOFT_ENABLED}
       # CALENDAR_PROVIDER_MICROSOFT_ENABLED: ${CALENDAR_PROVIDER_MICROSOFT_ENABLED}
-      # IS_CONFIG_VARIABLES_IN_DB_ENABLED: ${IS_CONFIG_VARIABLES_IN_DB_ENABLED}
     depends_on:
       db:
         condition: service_healthy
@@ -112,6 +127,10 @@ services:
       PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/default
       SERVER_URL: ${SERVER_URL}
       FRONTEND_URL: ${FRONTEND_URL}
+      # Mirrored so invite/notification emails (rendered here) build correct
+      # per-workspace subdomain URLs — same values as the server:
+      IS_MULTIWORKSPACE_ENABLED: ${IS_MULTIWORKSPACE_ENABLED}
+      DEFAULT_SUBDOMAIN: ${DEFAULT_SUBDOMAIN:-app}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       DISABLE_DB_MIGRATIONS: "true"  # already run by the server
       DISABLE_CRON_JOBS_REGISTRATION: "true"  # already run by the server
@@ -124,7 +143,9 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
       APP_SECRET: ${APP_SECRET:-}
-      # Mail/calendar sync jobs run here — mirror the Microsoft vars if you enable sync:
+      # Login (AUTH_MICROSOFT_*) is handled by the server, not the worker, so it
+      # is NOT mirrored here. Outlook mail/calendar SYNC jobs run on the worker —
+      # out of scope for now; mirror these only when you later enable sync:
       # AUTH_MICROSOFT_ENABLED: ${AUTH_MICROSOFT_ENABLED}
       # AUTH_MICROSOFT_CLIENT_ID: ${AUTH_MICROSOFT_CLIENT_ID}
       # AUTH_MICROSOFT_CLIENT_SECRET: ${AUTH_MICROSOFT_CLIENT_SECRET}
