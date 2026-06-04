@@ -22,10 +22,14 @@ services:
       FRONTEND_WILDCARD_DOMAIN: ${FRONTEND_WILDCARD_DOMAIN}   # e.g. *.app.ourco.com
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ':z' lets Docker SELinux-relabel these bind mounts at container start
+      # (no-op on non-SELinux hosts like Ubuntu; required on RHEL/Rocky so Caddy
+      # can read them). The frontend dir ALSO needs the persistent semanage rule
+      # in backend/README so files rsync'd in after start stay labeled.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
       # Static twenty-front bundle published here by frontend/build-and-deploy.sh
       # (DEPLOY_DIR), served read-only on *.app.ourco.com. Keep the two paths in sync.
-      - /srv/quandatics-front:/srv/quandatics-front:ro
+      - /srv/quandatics-front:/srv/quandatics-front:ro,z
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

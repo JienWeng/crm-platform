@@ -64,22 +64,25 @@ cd /opt/quandatics/crm-platform/backend
 cp .env.example .env
 ```
 
-**SELinux — the critical RHEL step.** Label both bind-mount sources
-`container_file_t`, or Caddy gets permission-denied even though `ls` works:
+**SELinux.** The two bind mounts in `docker-compose.yml` carry the `:z` flag, so
+Docker relabels the `Caddyfile` and `/srv/quandatics-front` to `container_file_t`
+automatically at container start — no `chcon` needed (and it's a no-op on Ubuntu).
+The one extra step is a **persistent** rule on the frontend dir, so files you
+`rsync` in *after* the container is running also get the right label:
 
 ```sh
-# Frontend dir Caddy serves. A persistent fcontext rule means every file rsync
-# drops in later inherits the right label automatically (no relabel per deploy):
 sudo mkdir -p /srv/quandatics-front
 sudo chown -R deploy:deploy /srv/quandatics-front
 sudo semanage fcontext -a -t container_file_t "/srv/quandatics-front(/.*)?"
 sudo restorecon -Rv /srv/quandatics-front
-
-# The Caddyfile bind mount (static; re-run if a later `git pull` recreates it):
-sudo chcon -t container_file_t /opt/quandatics/crm-platform/backend/Caddyfile
 ```
-> Debug aid only: `sudo setenforce 0` confirms whether SELinux is the cause —
-> then `sudo setenforce 1` and fix the labels properly. Don't leave it permissive.
+> Debug aid only: `sudo setenforce 0` confirms whether SELinux is the cause of a
+> Caddy permission error — then `sudo setenforce 1` and fix labels properly.
+> Don't leave it permissive.
+>
+> (Avoid `chcon -t container_file_t <file>` on a freshly cloned file — if the file
+> is "unlabeled" it fails with *"can't apply partial context"*; the `:z` mount flag
+> sidesteps this entirely.)
 
 Now fill `.env` and generate secrets exactly as in **One-time setup** (set
 `SERVER_IMAGE`/`TAG`, domains, `FRONTEND_WILDCARD_DOMAIN=*.app.ourco.com`,
