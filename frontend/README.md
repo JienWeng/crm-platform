@@ -50,3 +50,10 @@ since we host statically, `inject-runtime-env.sh` writes it into `index.html` at
 build time instead. Auth uses bearer tokens in the `Authorization` header (token
 kept in a `SameSite=Lax`, secure cookie on the frontend origin), so the
 cross-domain split does not break login.
+
+## CI secrets (Settings → Secrets and variables → Actions)
+- `DEPLOY_SSH_KEY`        — private key whose public half is in the VPS deploy user's authorized_keys
+- `DEPLOY_SSH_USER_HOST`  — e.g. internalops@202.186.223.119  (must be reachable from the GitHub runner; requires exposing port 22 OR using a self-hosted runner on the VPN)
+- `DEPLOY_HOST_IP`        — 202.186.223.119
+
+> Note: GitHub-hosted runners can only reach the VPS if SSH (22) is exposed publicly, which we do NOT want. Prefer a self-hosted runner on the VPS/VPN (dials out, no inbound 22), or have CI upload the bundle as an artifact and let the VPS pull it. The first production build is done manually from a Mac (see deploy plan), so CI can be finalized after launch.
