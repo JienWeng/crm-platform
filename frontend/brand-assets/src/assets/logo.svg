@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 200" role="img" aria-label="Quandatics">
+  <defs>
+    <linearGradient id="qg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2348C7"/>
+      <stop offset="1" stop-color="#18B8A6"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="36" width="128" height="128" rx="30" fill="url(#qg2)"/>
+  <circle cx="84" cy="96" r="34" fill="none" stroke="#ffffff" stroke-width="12"/>
+  <line x1="98" y1="110" x2="118" y2="130" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+  <text x="180" y="128" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="92" font-weight="700" fill="#1A2B4A">Quandatics</text>
+</svg>
