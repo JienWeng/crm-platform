@@ -1,46 +1,25 @@
-# TLS-terminating reverse proxy + static frontend host for the Twenty stack.
-# Issues real Let's Encrypt certs via the Cloudflare DNS-01 challenge — no public
-# inbound traffic required, so it works for a server that is only reachable on
-# the VPN / local network. DNS-01 is also the only ACME flow that can issue the
-# *.app.ourco.com wildcard the multi-workspace frontend needs.
+# TLS-terminating ingress for the Twenty stack. ONE apex-wildcard host block
+# covers everything:
+#   api.<apex>          -> API   (server routes /healthz, /auth, /graphql, /rest)
+#   app.<apex>          -> default-workspace SPA
+#   <workspace>.<apex>  -> per-workspace SPA
+# All proxy to the all-in-one Twenty server (serves the built-in frontend + API
+# on :3000). TLS is a single Cloudflare DNS-01 *wildcard* cert — issuance needs no
+# public inbound, so it works VPN-only or public (port-forward) identically.
 #
-# Requires the caddy-cloudflare image (DNS module) and a Cloudflare API token
-# with Zone:DNS:Edit on the zone. Both are wired in docker-compose.yml via .env.
-
-# --- API: api.ourco.com -> twenty-server ------------------------------------
-# One workspace-agnostic server; the request's subdomain (Origin/Host) tells it
-# which workspace. Auth callbacks are centralized here (see spec §3).
-{$API_DOMAIN} {
-	tls {
-		dns cloudflare {$CLOUDFLARE_API_TOKEN}
-	}
-
-	# Forward everything to the Twenty server over the internal compose network.
-	reverse_proxy server:3000
-
-	encode gzip zstd
-}
-
-# --- Frontend: *.app.ourco.com -> static twenty-front bundle ----------------
-# One static twenty-front build serves every workspace subdomain (the bundle is
-# workspace-agnostic — REACT_APP_SERVER_BASE_URL points at api.ourco.com, and the
-# browser subdomain selects the workspace). A single wildcard cert covers them all.
+# Requires the caddy-cloudflare image (DNS module) + a Cloudflare token with
+# Zone:DNS:Edit on the zone. Both are wired via docker-compose.yml from .env.
 #
-# The build output is mounted into this Caddy container at /srv/quandatics-front
-# (read-only bind mount, wired in docker-compose.yml). frontend/build-and-deploy.sh
-# publishes the bundle to that host path (DEPLOY_DIR); keep the two in sync.
+# ── INTERIM vs INTENDED ───────────────────────────────────────────────────────
+# This `reverse_proxy` serves Twenty's BUILT-IN frontend (stock branding) so SSO
+# login + workspace creation work without a frontend build. The INTENDED end-state
+# serves the Quandatics-REBRANDED static bundle via file_server on the workspace
+# hosts (split from the API), which needs a Node-24 build of twenty-front. See
+# DEPLOY-NOTES.md ("Rebranded frontend"). Switch back to file_server then.
 {$FRONTEND_WILDCARD_DOMAIN} {
 	tls {
-		# Wildcard cert for *.app.ourco.com via the same DNS-01 resolver as the API.
 		dns cloudflare {$CLOUDFLARE_API_TOKEN}
 	}
-
-	root * /srv/quandatics-front
-
-	# SPA fallback: serve the requested file if it exists, otherwise hand the
-	# router index.html so client-side routes resolve.
-	try_files {path} /index.html
-	file_server
-
+	reverse_proxy server:3000
 	encode gzip zstd
 }

@@ -1,0 +1,49 @@
+name: Build & deploy Quandatics frontend
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: true
+
+env:
+  TAG: v2.8.3
+  REACT_APP_SERVER_BASE_URL: https://api.quandatics.dpdns.org
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.x'
+
+      - name: Enable corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Add VPS to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Load deploy SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Build rebranded bundle and rsync to VPS
+        env:
+          DEPLOY: ssh
+          DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_USER_HOST }}
+          DEPLOY_DIR: /srv/quandatics-front
+        run: |
+          cd frontend
+          chmod +x build-and-deploy.sh rebrand.sh
+          ./build-and-deploy.sh
